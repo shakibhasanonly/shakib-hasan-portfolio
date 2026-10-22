@@ -1,10 +1,19 @@
-import { useState, type FormEvent } from "react";
-import { Mail, Phone, MessageCircle, MapPin, Send, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
-import Reveal from "../components/Reveal";
-import { contactInfo } from "../data/content";
-import { supabase, supabaseConfigured } from "../lib/supabase";
+import { useState, type FormEvent } from 'react';
+import emailjs from '@emailjs/browser';
+import {
+  Mail,
+  Phone,
+  MessageCircle,
+  MapPin,
+  Send,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+} from 'lucide-react';
+import Reveal from '../components/Reveal';
+import { contactInfo } from '../data/content';
 
-type Status = "idle" | "loading" | "success" | "error";
+type Status = 'idle' | 'loading' | 'success' | 'error';
 
 interface FormState {
   first_name: string;
@@ -15,54 +24,126 @@ interface FormState {
 }
 
 const initialForm: FormState = {
-  first_name: "",
-  last_name: "",
-  email: "",
-  subject: "",
-  message: "",
+  first_name: '',
+  last_name: '',
+  email: '',
+  subject: '',
+  message: '',
 };
 
 export default function ContactPage() {
   const [form, setForm] = useState<FormState>(initialForm);
-  const [status, setStatus] = useState<Status>("idle");
-  const [errorMsg, setErrorMsg] = useState<string>("");
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [status, setStatus] = useState<Status>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<
+    Partial<Record<keyof FormState, string>>
+  >({});
 
   const validate = (): boolean => {
     const errs: Partial<Record<keyof FormState, string>> = {};
-    if (!form.first_name.trim()) errs.first_name = "First name is required.";
-    if (!form.last_name.trim()) errs.last_name = "Last name is required.";
-    if (!form.email.trim()) errs.email = "Email is required.";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = "Enter a valid email address.";
-    if (!form.subject.trim()) errs.subject = "Subject is required.";
-    if (!form.message.trim()) errs.message = "Message is required.";
+
+    if (!form.first_name.trim()) {
+      errs.first_name = 'First name is required.';
+    }
+
+    if (!form.last_name.trim()) {
+      errs.last_name = 'Last name is required.';
+    }
+
+    if (!form.email.trim()) {
+      errs.email = 'Email is required.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      errs.email = 'Enter a valid email address.';
+    }
+
+    if (!form.subject.trim()) {
+      errs.subject = 'Subject is required.';
+    }
+
+    if (!form.message.trim()) {
+      errs.message = 'Message is required.';
+    }
+
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setErrorMsg("");
+    setErrorMsg('');
+
     if (!validate()) return;
-    if (!supabase) {
-      setStatus("error");
-      setErrorMsg("The contact form backend is not configured. Connect Supabase to enable submissions.");
-      return;
+
+    setStatus('loading');
+
+    try {
+      const serviceId = import.meta.env.VITE_EMAILJS_SERVICE_ID?.trim();
+      const templateId = import.meta.env.VITE_EMAILJS_TEMPLATE_ID?.trim();
+      const publicKey = import.meta.env.VITE_EMAILJS_PUBLIC_KEY?.trim();
+
+      // Debugging: check whether environment variables are available.
+      console.log('EmailJS config status:', {
+        serviceId: Boolean(serviceId),
+        templateId: Boolean(templateId),
+        publicKey: Boolean(publicKey),
+      });
+
+      if (!serviceId || !templateId || !publicKey) {
+        throw new Error(
+          'EmailJS configuration is missing. Check your .env file and restart Vite.',
+        );
+      }
+
+      const fullName = `${form.first_name} ${form.last_name}`.trim();
+
+      const response = await emailjs.send(
+        serviceId,
+        templateId,
+        {
+          from_name: fullName,
+          from_email: form.email,
+          subject: form.subject,
+          message: form.message,
+          name: fullName,
+          email: form.email,
+          time: new Date().toLocaleString(),
+        },
+        { publicKey },
+      );
+
+      console.log('EmailJS success:', response.status);
+
+      setStatus('success');
+      setForm(initialForm);
+      setFieldErrors({});
+    } catch (error) {
+      console.error('EmailJS error:', error);
+
+      setStatus('error');
+
+      if (error instanceof Error) {
+        setErrorMsg(
+          error.message.includes('configuration is missing')
+            ? 'Email configuration is missing. Please check your .env file and restart the development server.'
+            : 'Unable to send your message. Please check your EmailJS settings and try again.',
+        );
+      } else {
+        setErrorMsg(
+          'Unable to send your message. Please try again or email me directly.',
+        );
+      }
     }
-    setStatus("loading");
-    const { error } = await supabase.from("contact_messages").insert(form);
-    if (error) {
-      setStatus("error");
-      setErrorMsg("Something went wrong while sending. Please try again or email me directly.");
-      return;
-    }
-    setStatus("success");
-    setForm(initialForm);
   };
 
   const update = (field: keyof FormState, value: string) => {
-    setForm((f) => ({ ...f, [field]: value }));
-    if (fieldErrors[field]) setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
+    setForm(f => ({ ...f, [field]: value }));
+
+    if (fieldErrors[field]) {
+      setFieldErrors(prev => ({
+        ...prev,
+        [field]: undefined,
+      }));
+    }
   };
 
   return (
@@ -73,39 +154,64 @@ export default function ContactPage() {
             <span className="section-label">Contact</span>
             <h1 className="contact-title">Let's work together.</h1>
             <p className="contact-intro">
-              I'm available for full-stack web development, brand identity design, and creative
-              collaborations.
+              I'm available for full-stack web development, brand identity
+              design, and creative collaborations.
             </p>
           </Reveal>
 
           <div className="contact-grid">
             <Reveal className="contact-info">
-              <a href={`mailto:${contactInfo.email}`} className="contact-info-row">
-                <span className="contact-info-icon"><Mail size={18} /></span>
+              <a
+                href={`mailto:${contactInfo.email}`}
+                className="contact-info-row"
+              >
+                <span className="contact-info-icon">
+                  <Mail size={18} />
+                </span>
                 <span>
                   <span className="contact-info-label">Email</span>
-                  <span className="contact-info-value">{contactInfo.email}</span>
+                  <span className="contact-info-value">
+                    {contactInfo.email}
+                  </span>
                 </span>
               </a>
+
               <a href={`tel:${contactInfo.phone}`} className="contact-info-row">
-                <span className="contact-info-icon"><Phone size={18} /></span>
+                <span className="contact-info-icon">
+                  <Phone size={18} />
+                </span>
                 <span>
                   <span className="contact-info-label">Phone</span>
-                  <span className="contact-info-value">{contactInfo.phone}</span>
+                  <span className="contact-info-value">
+                    {contactInfo.phone}
+                  </span>
                 </span>
               </a>
-              <a href={contactInfo.whatsapp} target="_blank" rel="noopener noreferrer" className="contact-info-row">
-                <span className="contact-info-icon"><MessageCircle size={18} /></span>
+
+              <a
+                href={contactInfo.whatsapp}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="contact-info-row"
+              >
+                <span className="contact-info-icon">
+                  <MessageCircle size={18} />
+                </span>
                 <span>
                   <span className="contact-info-label">WhatsApp</span>
                   <span className="contact-info-value">Chat on WhatsApp</span>
                 </span>
               </a>
+
               <div className="contact-info-row">
-                <span className="contact-info-icon"><MapPin size={18} /></span>
+                <span className="contact-info-icon">
+                  <MapPin size={18} />
+                </span>
                 <span>
                   <span className="contact-info-label">Location</span>
-                  <span className="contact-info-value">{contactInfo.location}</span>
+                  <span className="contact-info-value">
+                    {contactInfo.location}
+                  </span>
                 </span>
               </div>
             </Reveal>
@@ -119,21 +225,30 @@ export default function ContactPage() {
                       id="first_name"
                       type="text"
                       value={form.first_name}
-                      onChange={(e) => update("first_name", e.target.value)}
+                      onChange={e => update('first_name', e.target.value)}
                       autoComplete="given-name"
                     />
-                    {fieldErrors.first_name && <span className="form-error">{fieldErrors.first_name}</span>}
+                    {fieldErrors.first_name && (
+                      <span className="form-error">
+                        {fieldErrors.first_name}
+                      </span>
+                    )}
                   </div>
+
                   <div className="form-field">
                     <label htmlFor="last_name">Last Name</label>
                     <input
                       id="last_name"
                       type="text"
                       value={form.last_name}
-                      onChange={(e) => update("last_name", e.target.value)}
+                      onChange={e => update('last_name', e.target.value)}
                       autoComplete="family-name"
                     />
-                    {fieldErrors.last_name && <span className="form-error">{fieldErrors.last_name}</span>}
+                    {fieldErrors.last_name && (
+                      <span className="form-error">
+                        {fieldErrors.last_name}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -143,10 +258,12 @@ export default function ContactPage() {
                     id="email"
                     type="email"
                     value={form.email}
-                    onChange={(e) => update("email", e.target.value)}
+                    onChange={e => update('email', e.target.value)}
                     autoComplete="email"
                   />
-                  {fieldErrors.email && <span className="form-error">{fieldErrors.email}</span>}
+                  {fieldErrors.email && (
+                    <span className="form-error">{fieldErrors.email}</span>
+                  )}
                 </div>
 
                 <div className="form-field">
@@ -155,9 +272,11 @@ export default function ContactPage() {
                     id="subject"
                     type="text"
                     value={form.subject}
-                    onChange={(e) => update("subject", e.target.value)}
+                    onChange={e => update('subject', e.target.value)}
                   />
-                  {fieldErrors.subject && <span className="form-error">{fieldErrors.subject}</span>}
+                  {fieldErrors.subject && (
+                    <span className="form-error">{fieldErrors.subject}</span>
+                  )}
                 </div>
 
                 <div className="form-field">
@@ -166,19 +285,22 @@ export default function ContactPage() {
                     id="message"
                     rows={5}
                     value={form.message}
-                    onChange={(e) => update("message", e.target.value)}
+                    onChange={e => update('message', e.target.value)}
                   />
-                  {fieldErrors.message && <span className="form-error">{fieldErrors.message}</span>}
+                  {fieldErrors.message && (
+                    <span className="form-error">{fieldErrors.message}</span>
+                  )}
                 </div>
 
                 <button
                   type="submit"
                   className="btn btn-primary btn-large contact-submit"
-                  disabled={status === "loading"}
+                  disabled={status === 'loading'}
                 >
-                  {status === "loading" ? (
+                  {status === 'loading' ? (
                     <>
-                      <Loader2 size={18} className="spin" /> Sending…
+                      <Loader2 size={18} className="spin" />
+                      Sending…
                     </>
                   ) : (
                     <>
@@ -187,25 +309,25 @@ export default function ContactPage() {
                   )}
                 </button>
 
-                {status === "success" && (
+                {status === 'success' && (
                   <p className="form-feedback form-feedback-success">
-                    <CheckCircle2 size={16} /> Thanks — your message has been sent. I'll get back to you soon.
+                    <CheckCircle2 size={16} />
+                    Thanks — your message has been sent. I'll get back to you
+                    soon.
                   </p>
                 )}
-                {status === "error" && (
+
+                {status === 'error' && (
                   <p className="form-feedback form-feedback-error">
-                    <AlertCircle size={16} /> {errorMsg}
-                  </p>
-                )}
-                {!supabaseConfigured && (
-                  <p className="form-note">
-                    Note: form submissions are not yet connected to a backend. Email me directly at {contactInfo.email}.
+                    <AlertCircle size={16} />
+                    {errorMsg}
                   </p>
                 )}
               </form>
             </Reveal>
           </div>
         </div>
+
         <style>{`
           .contact-page { padding-top: 72px; }
           .contact-head {
@@ -274,9 +396,21 @@ export default function ContactPage() {
             border-radius: var(--radius);
             padding: var(--space-3);
           }
-          .contact-form { display: flex; flex-direction: column; gap: var(--space-2); }
-          .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
-          .form-field { display: flex; flex-direction: column; gap: 0.4rem; }
+          .contact-form {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-2);
+          }
+          .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-2);
+          }
+          .form-field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+          }
           .form-field label {
             font-size: 0.85rem;
             color: var(--text-secondary);
@@ -298,9 +432,18 @@ export default function ContactPage() {
             outline: none;
             border-color: var(--accent);
           }
-          .form-error { color: #ff6b6b; font-size: 0.8rem; }
-          .contact-submit { margin-top: var(--space-1); width: 100%; }
-          .contact-submit:disabled { opacity: 0.7; cursor: progress; }
+          .form-error {
+            color: #ff6b6b;
+            font-size: 0.8rem;
+          }
+          .contact-submit {
+            margin-top: var(--space-1);
+            width: 100%;
+          }
+          .contact-submit:disabled {
+            opacity: 0.7;
+            cursor: progress;
+          }
           .spin { animation: spin 0.8s linear infinite; }
           @keyframes spin { to { transform: rotate(360deg); } }
           .form-feedback {
@@ -311,9 +454,18 @@ export default function ContactPage() {
             padding: 0.7rem 1rem;
             border-radius: var(--radius-sm);
           }
-          .form-feedback-success { background: var(--accent-soft); color: var(--accent); }
-          .form-feedback-error { background: rgba(255,107,107,0.12); color: #ff8a8a; }
-          .form-note { color: var(--text-secondary); font-size: 0.85rem; }
+          .form-feedback-success {
+            background: var(--accent-soft);
+            color: var(--accent);
+          }
+          .form-feedback-error {
+            background: rgba(255,107,107,0.12);
+            color: #ff8a8a;
+          }
+          .form-note {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+          }
 
           @media (max-width: 880px) {
             .contact-grid { grid-template-columns: 1fr; }
